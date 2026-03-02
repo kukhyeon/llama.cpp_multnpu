@@ -6,6 +6,8 @@
 #include "llama.h"
 #include "chat.h"
 
+#include "ggml-backend.h"
+
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -69,11 +71,27 @@ std::tuple<int, double, int, double> llama_perf_context_print_custom(const struc
     // Convert time_point to time_t (seconds since epoch)
     auto now_sys_time = std::chrono::system_clock::now();
     auto sys_time = std::chrono::duration_cast<std::chrono::milliseconds>(now_sys_time-start_sys_time).count();
+
+    const auto prof = ggml_backend_sched_profile_get();
     // system time, prefill speed, decode speed, prefill tokens, decode tokens, ttft
     std::ofstream file(output_filename, std::ios::app);
     if (file.is_open()) {
         file << std::to_string(sys_time) << "," << ( 1e3 / data.t_p_eval_ms *data.n_p_eval ) << "," << (1e3 / data.t_eval_ms * data.n_eval ) << "," 
-              << data.n_p_eval << ","<< data.n_eval << "," << (data.t_p_eval_ms)<<"\n";
+              << data.n_p_eval << ","<< data.n_eval << "," << (data.t_p_eval_ms)
+              << "," << prof.prefill_cpu_layers
+              << "," << prof.prefill_htp_layers
+              << "," << prof.prefill_cpu_ms
+              << "," << prof.prefill_htp_ms
+              << "," << prof.decode_cpu_layers
+              << "," << prof.decode_htp_layers
+              << "," << prof.decode_cpu_ms
+              << "," << prof.decode_htp_ms
+              << "," << prof.total_ops
+              << "," << prof.prefill_cpu_ops
+              << "," << prof.decode_cpu_ops
+              << "," << prof.prefill_htp_ops
+              << "," << prof.decode_htp_ops
+              << "\n";
         file.close();
     } else {
         // LLAMA_LOG_INFO("Failed to open file: %s\n", output_filename.c_str());
@@ -515,7 +533,10 @@ int main(int argc, char ** argv) {
     auto start_sys_time = std::chrono::system_clock::now();
     std::ofstream file(output_path_infer, std::ios::app);
     if (file.is_open() && output_path_infer!="/inference_stats.csv") {
-        file << "sys_time, prefill_speed, decode_speed, prefill_token, decode_token, ttft\n";
+        file << "sys_time,prefill_speed,decode_speed,prefill_token,decode_token,ttft,";
+        file << "prefill_cpu_layers,prefill_htp_layers,prefill_cpu_ms,prefill_htp_ms,";
+        file << "decode_cpu_layers,decode_htp_layers,decode_cpu_ms,decode_htp_ms,";
+        file << "total_ops,prefill_cpu_ops,decode_cpu_ops,prefill_htp_ops,decode_htp_ops\n";
         file.close();
     }
 
@@ -1035,6 +1056,7 @@ int main(int argc, char ** argv) {
                     ctx_kv_cache_clear(ctx);
                     embd_inp.clear();
                     llama_perf_context_reset(ctx);
+                    ggml_backend_sched_profile_reset();
                     n_past = 0; n_consumed = 0; waiting_for_first_input = true;
                     common_sampler_reset(smpl);
 
