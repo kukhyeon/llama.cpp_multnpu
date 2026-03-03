@@ -91,6 +91,14 @@ std::tuple<int, double, int, double> llama_perf_context_print_custom(const struc
               << "," << prof.decode_cpu_ops
               << "," << prof.prefill_htp_ops
               << "," << prof.decode_htp_ops
+              << "," << prof.prefill_copy_ms
+              << "," << prof.prefill_wait_ms
+              << "," << prof.prefill_build_ms
+              << "," << prof.prefill_sampling_ms
+              << "," << prof.decode_copy_ms
+              << "," << prof.decode_wait_ms
+              << "," << prof.decode_build_ms
+              << "," << prof.decode_sampling_ms
               << "\n";
         file.close();
     } else {
@@ -536,7 +544,9 @@ int main(int argc, char ** argv) {
         file << "sys_time,prefill_speed,decode_speed,prefill_token,decode_token,ttft,";
         file << "prefill_cpu_layers,prefill_htp_layers,prefill_cpu_ms,prefill_htp_ms,";
         file << "decode_cpu_layers,decode_htp_layers,decode_cpu_ms,decode_htp_ms,";
-        file << "total_ops,prefill_cpu_ops,decode_cpu_ops,prefill_htp_ops,decode_htp_ops\n";
+        file << "total_ops,prefill_cpu_ops,decode_cpu_ops,prefill_htp_ops,decode_htp_ops,";
+        file << "prefill_copy_ms,prefill_wait_ms,prefill_build_ms,prefill_sampling_ms,";
+        file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms\n";
         file.close();
     }
 
@@ -817,6 +827,12 @@ int main(int argc, char ** argv) {
                 LOG_DBG("eval: %s\n", string_from(ctx, embd).c_str());
 
                 GGML_ASSERT(n_eval <= params.n_batch);
+
+                // Source-of-truth for prefill vs decode in ignite-npu (single-threaded runner):
+                // - before the first sampled token, we treat all llama_decode() as prefill
+                // - after generation_started becomes true, we treat llama_decode() as decode
+                ggml_backend_sched_profile_set_phase(generation_started ? GGML_BACKEND_SCHED_PROFILE_DECODE : GGML_BACKEND_SCHED_PROFILE_PREFILL);
+
                 if (llama_decode(ctx, llama_batch_get_one(embd.data(), n_eval))) {
                     LOG_ERR("%s : failed to eval\n", __func__);
                     return 1;
@@ -853,9 +869,14 @@ int main(int argc, char ** argv) {
                 LOG_DBG("saved session to %s\n", path_session.c_str());
             }
 
+            // Sampling happens only during generation (decode phase).
+            ggml_backend_sched_profile_set_phase(GGML_BACKEND_SCHED_PROFILE_DECODE);
+
+            const int64_t t_sample_us = ggml_time_us();
             const llama_token id = common_sampler_sample(smpl, ctx, -1);
 
             common_sampler_accept(smpl, id, /* accept_grammar= */ true);
+            ggml_backend_sched_profile_add_sampling_ms((ggml_time_us() - t_sample_us) / 1000.0);
 
             // LOG_DBG("last: %s\n", string_from(ctx, smpl->prev.to_vector()).c_str());
 

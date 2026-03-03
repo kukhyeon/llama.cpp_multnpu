@@ -372,10 +372,23 @@ extern "C" {
         uint64_t decode_cpu_ops;
         uint64_t prefill_htp_ops;
         uint64_t decode_htp_ops;
+
+        // Overhead breakdown (wall-time, ms)
+        double   prefill_copy_ms;
+        double   prefill_wait_ms;
+        double   prefill_build_ms;
+        double   prefill_sampling_ms;
+
+        double   decode_copy_ms;
+        double   decode_wait_ms;
+        double   decode_build_ms;
+        double   decode_sampling_ms;
     };
 
     GGML_API void ggml_backend_sched_profile_reset(void);
     GGML_API void ggml_backend_sched_profile_set_phase(enum ggml_backend_sched_profile_phase phase);
+    GGML_API void ggml_backend_sched_profile_add_build_ms(double build_ms);
+    GGML_API void ggml_backend_sched_profile_add_sampling_ms(double sampling_ms);
     GGML_API struct ggml_backend_sched_profile_data ggml_backend_sched_profile_get(void);
 
     //

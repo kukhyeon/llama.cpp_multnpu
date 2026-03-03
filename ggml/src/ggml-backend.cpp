@@ -878,6 +878,40 @@ void ggml_backend_sched_profile_set_phase(enum ggml_backend_sched_profile_phase 
     g_sched_profile_phase = phase;
 }
 
+static inline void ggml_sched_profile_add_copy_us(const int64_t dt_us) {
+    const double dt_ms = (double) dt_us / 1000.0;
+    if (g_sched_profile_phase == GGML_BACKEND_SCHED_PROFILE_PREFILL) {
+        g_sched_profile.out.prefill_copy_ms += dt_ms;
+    } else {
+        g_sched_profile.out.decode_copy_ms += dt_ms;
+    }
+}
+
+static inline void ggml_sched_profile_add_wait_us(const int64_t dt_us) {
+    const double dt_ms = (double) dt_us / 1000.0;
+    if (g_sched_profile_phase == GGML_BACKEND_SCHED_PROFILE_PREFILL) {
+        g_sched_profile.out.prefill_wait_ms += dt_ms;
+    } else {
+        g_sched_profile.out.decode_wait_ms += dt_ms;
+    }
+}
+
+void ggml_backend_sched_profile_add_build_ms(double build_ms) {
+    if (g_sched_profile_phase == GGML_BACKEND_SCHED_PROFILE_PREFILL) {
+        g_sched_profile.out.prefill_build_ms += build_ms;
+    } else {
+        g_sched_profile.out.decode_build_ms += build_ms;
+    }
+}
+
+void ggml_backend_sched_profile_add_sampling_ms(double sampling_ms) {
+    if (g_sched_profile_phase == GGML_BACKEND_SCHED_PROFILE_PREFILL) {
+        g_sched_profile.out.prefill_sampling_ms += sampling_ms;
+    } else {
+        g_sched_profile.out.decode_sampling_ms += sampling_ms;
+    }
+}
+
 struct ggml_backend_sched_profile_data ggml_backend_sched_profile_get(void) {
     return g_sched_profile.out;
 }
@@ -1614,17 +1648,35 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             if (input->flags & GGML_TENSOR_FLAG_INPUT) {
                 // inputs from the user must be copied immediately to prevent the user overwriting the data before the copy is done
                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                    const int64_t t0_us = ggml_time_us();
                     ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
+                    const int64_t t1_us = ggml_time_us();
+                    ggml_sched_profile_add_wait_us(t1_us - t0_us);
                 } else {
+                    const int64_t t0_us = ggml_time_us();
                     ggml_backend_synchronize(split_backend);
+                    const int64_t t1_us = ggml_time_us();
+                    ggml_sched_profile_add_wait_us(t1_us - t0_us);
                 }
-                ggml_backend_tensor_copy(input, input_cpy);
+
+                {
+                    const int64_t t0_us = ggml_time_us();
+                    ggml_backend_tensor_copy(input, input_cpy);
+                    const int64_t t1_us = ggml_time_us();
+                    ggml_sched_profile_add_copy_us(t1_us - t0_us);
+                }
             } else {
                 // wait for the split backend to finish using the input before overwriting it
                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                    const int64_t t0_us = ggml_time_us();
                     ggml_backend_event_wait(split_backend, sched->events[split_backend_id][sched->cur_copy]);
+                    const int64_t t1_us = ggml_time_us();
+                    ggml_sched_profile_add_wait_us(t1_us - t0_us);
                 } else {
+                    const int64_t t0_us = ggml_time_us();
                     ggml_backend_synchronize(split_backend);
+                    const int64_t t1_us = ggml_time_us();
+                    ggml_sched_profile_add_wait_us(t1_us - t0_us);
                 }
 
                 // when offloading MoE weights, we can reduce the amount of data copied by copying only the experts that are used
@@ -1639,7 +1691,12 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                     const int64_t n_expert   = node->op == GGML_OP_MUL_MAT_ID ? input->ne[2] : input->ne[1];
                     const size_t expert_size = node->op == GGML_OP_MUL_MAT_ID ? input->nb[2] : input->nb[1];
 
-                    ggml_backend_synchronize(input_backend);
+                    {
+                        const int64_t t0_us = ggml_time_us();
+                        ggml_backend_synchronize(input_backend);
+                        const int64_t t1_us = ggml_time_us();
+                        ggml_sched_profile_add_wait_us(t1_us - t0_us);
+                    }
 
                     // get the ids
                     ggml_tensor * ids_tensor = node->src[2];
@@ -1657,8 +1714,18 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
 
                     if (ids_tensor != prev_ids_tensor) {
                         ids.resize(ggml_nbytes(ids_tensor) / sizeof(int32_t));
-                        ggml_backend_tensor_get_async(ids_backend, ids_tensor, ids.data(), 0, ggml_nbytes(ids_tensor));
-                        ggml_backend_synchronize(ids_backend);
+                        {
+                            const int64_t t0_us = ggml_time_us();
+                            ggml_backend_tensor_get_async(ids_backend, ids_tensor, ids.data(), 0, ggml_nbytes(ids_tensor));
+                            const int64_t t1_us = ggml_time_us();
+                            ggml_sched_profile_add_copy_us(t1_us - t0_us);
+                        }
+                        {
+                            const int64_t t0_us = ggml_time_us();
+                            ggml_backend_synchronize(ids_backend);
+                            const int64_t t1_us = ggml_time_us();
+                            ggml_sched_profile_add_wait_us(t1_us - t0_us);
+                        }
 
                         // find the used experts
                         used_ids.clear();
@@ -1681,12 +1748,15 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                         const size_t padding = std::min<size_t>(expert_size, 512);
                         const size_t padding_end = last_id < n_expert - 1 ? padding : 0;
 
+                        const int64_t t0_us = ggml_time_us();
                         ggml_backend_tensor_set_async(split_backend,
                             input_cpy,
                             (const uint8_t *)input->data + expert_offset, expert_offset,
                             // copy a bit extra at the to ensure there are no NaNs in the padding of the last expert
                             // this is necessary for MMQ in the CUDA backend
                             expert_size_copy + padding_end);
+                        const int64_t t1_us = ggml_time_us();
+                        ggml_sched_profile_add_copy_us(t1_us - t0_us);
                     };
 
                     int id = 0;
@@ -1713,16 +1783,40 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                     }
                     copy_experts(first_id, last_id);
                 } else {
-                    // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend, since we handle the synchronization here with multiple copies and events
-                    // TODO: add public function to facilitate this, since applications do not have direct access to the backend interface
-                    if (!split_backend->iface.cpy_tensor_async || !split_backend->iface.cpy_tensor_async(input_backend, split_backend, input, input_cpy)) {
-                        ggml_backend_synchronize(input_backend);
-                        if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
-                            ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
-                        } else {
-                            ggml_backend_synchronize(split_backend);
+                    // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend,
+                    // since we handle the synchronization here with multiple copies and events.
+                    bool async_ok = false;
+                    if (split_backend->iface.cpy_tensor_async) {
+                        const int64_t t0_us = ggml_time_us();
+                        async_ok = split_backend->iface.cpy_tensor_async(input_backend, split_backend, input, input_cpy);
+                        const int64_t t1_us = ggml_time_us();
+                        ggml_sched_profile_add_copy_us(t1_us - t0_us);
+                    }
+
+                    if (!async_ok) {
+                        {
+                            const int64_t t0_us = ggml_time_us();
+                            ggml_backend_synchronize(input_backend);
+                            const int64_t t1_us = ggml_time_us();
+                            ggml_sched_profile_add_wait_us(t1_us - t0_us);
                         }
-                        ggml_backend_tensor_copy(input, input_cpy);
+                        if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                            const int64_t t0_us = ggml_time_us();
+                            ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
+                            const int64_t t1_us = ggml_time_us();
+                            ggml_sched_profile_add_wait_us(t1_us - t0_us);
+                        } else {
+                            const int64_t t0_us = ggml_time_us();
+                            ggml_backend_synchronize(split_backend);
+                            const int64_t t1_us = ggml_time_us();
+                            ggml_sched_profile_add_wait_us(t1_us - t0_us);
+                        }
+                        {
+                            const int64_t t0_us = ggml_time_us();
+                            ggml_backend_tensor_copy(input, input_cpy);
+                            const int64_t t1_us = ggml_time_us();
+                            ggml_sched_profile_add_copy_us(t1_us - t0_us);
+                        }
                     }
                 }
             }
