@@ -11,7 +11,7 @@ su -p -c "taskset f0 setenforce 0 && \
     cd /data/local/tmp/llama.cpp && \
     taskset f0 ./bin/llama-ignite-npu \
         -m /data/local/tmp/gguf/qwen1_5-0_5b-chat-q4_k_m.gguf \
-        -t 1 -tb 4 -np 1 -ub 512 -b 512 -fa off \
+        -t 1 -tb 4 -i -cnv -ub 512 -b 512 -fa off \
         --json-path data/hotpot_qa_30.json \
         --output-dir output \
         --temp 0 \

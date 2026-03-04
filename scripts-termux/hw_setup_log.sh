@@ -33,6 +33,7 @@ LLAMA_DIR="/data/local/tmp/llama.cpp"
 OUT_DIR="${LLAMA_DIR}/output"
 STATE_FILE="${OUT_DIR}/hw_log.state"
 LOG_ROOT_SCRIPT="/data/local/tmp/hw_log_root.sh"
+LOG_ROOT_PID_FILE="${OUT_DIR}/hw_log_root.pid"
 
 freq_from_idx() {
     idx="$1"; shift
@@ -113,10 +114,12 @@ start_hw_and_log() {
 LOG_FILE="$LOG_FILE"
 INTERVAL="$LOG_INTERVAL"
 START_MS=$(date +%s%3N)
+PID_FILE="$LOG_ROOT_PID_FILE"
 EOF
 
     cat >> "$LOG_ROOT_SCRIPT" <<'EOF'
 PREV_STAT=$(grep '^cpu[0-9]' /proc/stat)
+echo $$ > "$PID_FILE"
 
 while true; do
     NOW_MS=$(date +%s%3N)
@@ -190,6 +193,7 @@ EOF
 LOG_FILE="$LOG_FILE"
 LOG_PID="$LOG_PID"
 LOG_ROOT_SCRIPT="$LOG_ROOT_SCRIPT"
+LOG_ROOT_PID_FILE="$LOG_ROOT_PID_FILE"
 CLK0_IDX="$CLK0_IDX"
 CLK6_IDX="$CLK6_IDX"
 DDR_IDX="$DDR_IDX"
@@ -203,15 +207,25 @@ stop_hw_and_log() {
         # shellcheck disable=SC1090
         . "$STATE_FILE" 2>/dev/null
 
+        if [ -n "$LOG_ROOT_PID_FILE" ] && [ -f "$LOG_ROOT_PID_FILE" ]; then
+            ROOT_PID=$(cat "$LOG_ROOT_PID_FILE" 2>/dev/null)
+            if [ -n "$ROOT_PID" ]; then
+                su -c "kill $ROOT_PID" 2>/dev/null
+                sleep 0.2
+                su -c "kill -9 $ROOT_PID" 2>/dev/null
+                echo "[stop] logging stopped (root logger PID=${ROOT_PID})"
+            fi
+            rm -f "$LOG_ROOT_PID_FILE" 2>/dev/null
+        fi
+
         if [ -n "$LOG_PID" ]; then
             su -c "kill $LOG_PID" 2>/dev/null
-            # su 프로세스가 남아있으면 강제 종료
             sleep 0.2
             su -c "kill -9 $LOG_PID" 2>/dev/null
-            echo "[stop] logging stopped (PID=${LOG_PID})"
         fi
 
         if [ -n "$LOG_ROOT_SCRIPT" ]; then
+            su -c "pkill -f \"$LOG_ROOT_SCRIPT\"" 2>/dev/null
             su -c "rm -f $LOG_ROOT_SCRIPT" 2>/dev/null
         fi
 
