@@ -1067,6 +1067,20 @@ int main(int argc, char ** argv) {
             }
 
             if ((n_past > 0 || waiting_for_first_input) && is_interacting) {
+                if (!embd.empty()) {
+                    ggml_backend_sched_profile_set_phase(GGML_BACKEND_SCHED_PROFILE_DECODE);
+                
+                    int64_t t_cpu0_us = common_process_cpu_time_us();
+                    if (llama_decode(ctx, llama_batch_get_one(embd.data(), embd.size()))) {
+                        LOG_ERR("flush decode failed\n");
+                        return 1;
+                    }
+                    int64_t t_cpu1_us = common_process_cpu_time_us();
+                    ggml_backend_sched_profile_add_proc_cpu_ms((t_cpu1_us - t_cpu0_us)/1000.0);
+                
+                    n_past += embd.size();
+                    embd.clear();
+                }
 // -------------------------------
                 // Print inference time for previous question
                 if (inference_started) {
@@ -1126,6 +1140,7 @@ int main(int argc, char ** argv) {
                     // context reset for new question
                     ctx_kv_cache_clear(ctx);
                     embd_inp.clear();
+                    embd.clear();
                     llama_perf_context_reset(ctx);
                     ggml_backend_sched_profile_reset();
                     n_past = 0; n_consumed = 0; waiting_for_first_input = true;
