@@ -1118,7 +1118,6 @@ int main(int argc, char ** argv) {
                     // context reset for new question
                     ctx_kv_cache_clear(ctx);
                     embd_inp.clear();
-                    embd.clear();
                     llama_perf_context_reset(ctx);
                     ggml_backend_sched_profile_reset();
                     n_past = 0; n_consumed = 0; waiting_for_first_input = true;
