@@ -866,11 +866,6 @@ int main(int argc, char ** argv) {
 
                 GGML_ASSERT(n_eval <= params.n_batch);
 
-                // Source-of-truth for prefill vs decode in ignite-npu (single-threaded runner):
-                // - before the first sampled token, we treat all llama_decode() as prefill
-                // - after generation_started becomes true, we treat llama_decode() as decode
-                ggml_backend_sched_profile_set_phase(generation_started ? GGML_BACKEND_SCHED_PROFILE_DECODE : GGML_BACKEND_SCHED_PROFILE_PREFILL);
-
                 const int64_t t_cpu0_us = get_process_cpu_time_us();
 
                 if (llama_decode(ctx, llama_batch_get_one(embd.data(), n_eval))) {
@@ -913,9 +908,6 @@ int main(int argc, char ** argv) {
 
                 LOG_DBG("saved session to %s\n", path_session.c_str());
             }
-
-            // Sampling happens only during generation (decode phase).
-            ggml_backend_sched_profile_set_phase(GGML_BACKEND_SCHED_PROFILE_DECODE);
 
             const int64_t t_sample_cpu0_us = get_process_cpu_time_us();
             const int64_t t_sample_us = ggml_time_us();
@@ -1067,20 +1059,6 @@ int main(int argc, char ** argv) {
             }
 
             if ((n_past > 0 || waiting_for_first_input) && is_interacting) {
-                if (!embd.empty()) {
-                    ggml_backend_sched_profile_set_phase(GGML_BACKEND_SCHED_PROFILE_DECODE);
-                
-                    int64_t t_cpu0_us = get_process_cpu_time_us();
-                    if (llama_decode(ctx, llama_batch_get_one(embd.data(), embd.size()))) {
-                        LOG_ERR("flush decode failed\n");
-                        return 1;
-                    }
-                    int64_t t_cpu1_us = get_process_cpu_time_us();
-                    ggml_backend_sched_profile_add_proc_cpu_ms((t_cpu1_us - t_cpu0_us)/1000.0);
-                
-                    n_past += embd.size();
-                    embd.clear();
-                }
 // -------------------------------
                 // Print inference time for previous question
                 if (inference_started) {

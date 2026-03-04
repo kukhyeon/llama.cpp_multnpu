@@ -2134,6 +2134,9 @@ ggml_status llama_context::graph_compute(
         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
     }
 
+    // Let ggml scheduler profiling know whether this run is prefill (batched) or decode (single token).
+    ggml_backend_sched_profile_set_phase(batched ? GGML_BACKEND_SCHED_PROFILE_PREFILL : GGML_BACKEND_SCHED_PROFILE_DECODE);
+
     auto status = ggml_backend_sched_graph_compute_async(sched.get(), gf);
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
