@@ -629,7 +629,6 @@ int main(int argc, char ** argv) {
     #if IGNITE_USE_SYSTEM_DVFS
     std::thread record_thread = std::thread(record_hard, std::ref(sigterm), std::ref(dvfs));
     #endif
-    std::thread record_thread = std::thread(record_hard, std::ref(sigterm), std::ref(dvfs));
 
     // Input json file instead of cli input
     std::vector<std::string> json_questions;
