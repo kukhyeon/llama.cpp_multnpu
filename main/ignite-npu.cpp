@@ -18,6 +18,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <thread>
 #include <tuple>  // to accumulate json
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
@@ -37,6 +38,13 @@
 #endif
 
 #include "nlohmann/json.hpp"
+
+
+// dvfs library
+#include "hard/record.h"
+#include "hard/dvfs.h"
+#include "hard/utils.h"
+#include "hard/affinity.h"
 
 using json = nlohmann::json;
 
@@ -587,6 +595,11 @@ int main(int argc, char ** argv) {
         file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms,prefill_proc_cpu_ms,decode_proc_cpu_ms,proc_cpu_ms_total\n";
         file.close();
     }
+
+    // dummy dvfs object
+    std::string device_name = "S25";
+    DVFS dvfs(device_name);
+    dvfs.control_start_point = start_sys_time; // need to be initialized to sync `record_hard` and `inference_stats`.
 
     // Input json file instead of cli input
     std::vector<std::string> json_questions;

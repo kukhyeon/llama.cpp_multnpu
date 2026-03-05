@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <sstream>
 #include <mutex>
+#include <chrono>
 
 class Collector;
 
@@ -77,6 +78,8 @@ private:
 
 public:
     std::string output_filename;
+    const std::chrono::system_clock::time_point zero_start_point{std::chrono::system_clock::time_point::duration::zero()}; // not changed
+    std::chrono::system_clock::time_point control_start_point{std::chrono::system_clock::time_point::duration::zero()};
 
 public:
     DVFS(const std::string& device_name);
