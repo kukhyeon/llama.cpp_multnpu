@@ -131,7 +131,7 @@ while true; do
     for f in /sys/devices/virtual/thermal/thermal_zone*/temp; do
         if [ -r "$f" ]; then
             read v < "$f"
-            ROW="${ROW}$((v/1000)),"
+            ROW="${ROW}$(awk "BEGIN {printf \"%.2f\", $v/1000.0}"),"
         else
             ROW="${ROW},"
         fi
