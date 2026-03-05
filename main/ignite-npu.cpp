@@ -1297,7 +1297,7 @@ int main(int argc, char ** argv) {
     }
     
     #if IGNITE_USE_SYSTEM_DVFS
-    std::atomic_bool sigterm(true);
+    sigterm = true;
     #endif
 
     if (!path_session.empty() && params.prompt_cache_all && !params.prompt_cache_ro) {
