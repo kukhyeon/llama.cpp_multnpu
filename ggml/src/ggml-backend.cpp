@@ -865,6 +865,36 @@ static void ggml_sched_profile_note_layers(const ggml_cgraph & graph, bool is_cp
     }
 }
 
+static inline void ggml_sched_profile_add_op_type_count(enum ggml_op op, bool is_cpu) {
+    if (op < 0 || op >= GGML_OP_COUNT) {
+        return;
+    }
+
+    if (g_sched_profile_phase == GGML_BACKEND_SCHED_PROFILE_PREFILL) {
+        if (is_cpu) {
+            g_sched_profile.out.prefill_cpu_ops_by_type[op]++;
+        } else {
+            g_sched_profile.out.prefill_htp_ops_by_type[op]++;
+        }
+    } else {
+        if (is_cpu) {
+            g_sched_profile.out.decode_cpu_ops_by_type[op]++;
+        } else {
+            g_sched_profile.out.decode_htp_ops_by_type[op]++;
+        }
+    }
+}
+
+static inline void ggml_sched_profile_add_graph_op_type_counts(const ggml_cgraph & graph, bool is_cpu) {
+    for (int i = 0; i < graph.n_nodes; ++i) {
+        const ggml_tensor * t = graph.nodes[i];
+        if (t == nullptr) {
+            continue;
+        }
+        ggml_sched_profile_add_op_type_count(t->op, is_cpu);
+    }
+}
+
 void ggml_backend_sched_profile_reset(void) {
     g_sched_profile_phase = GGML_BACKEND_SCHED_PROFILE_PREFILL;
     g_sched_profile.out = {};
@@ -1835,6 +1865,8 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
         auto prof_add = [&](int n_nodes, int64_t dt_us) {
             const double dt_ms = (double) dt_us / 1000.0;
             g_sched_profile.out.total_ops += (uint64_t) n_nodes;
+
+            ggml_sched_profile_add_graph_op_type_counts(split->graph, split_is_cpu);
 
             if (g_sched_profile_phase == GGML_BACKEND_SCHED_PROFILE_PREFILL) {
                 if (split_is_cpu) {

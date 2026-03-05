@@ -373,6 +373,13 @@ extern "C" {
         uint64_t prefill_htp_ops;
         uint64_t decode_htp_ops;
 
+        // Operation counts by ggml op type.
+        // Indexed by enum ggml_op, see GGML_OP_* / GGML_OP_COUNT.
+        uint64_t prefill_cpu_ops_by_type[GGML_OP_COUNT];
+        uint64_t decode_cpu_ops_by_type[GGML_OP_COUNT];
+        uint64_t prefill_htp_ops_by_type[GGML_OP_COUNT];
+        uint64_t decode_htp_ops_by_type[GGML_OP_COUNT];
+
         // Overhead breakdown (wall-time, ms)
         double   prefill_copy_ms;
         double   prefill_wait_ms;

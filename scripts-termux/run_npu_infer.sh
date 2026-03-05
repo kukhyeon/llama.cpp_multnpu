@@ -4,7 +4,7 @@
 
 echo "[inference] starting..."
 
-su -p -c "taskset f0 setenforce 0 && \
+su -p -c "setenforce 0 && \
     export LD_LIBRARY_PATH=/data/local/tmp/llama.cpp/lib && \
     export ADSP_LIBRARY_PATH=/data/local/tmp/llama.cpp/lib && \
     export GGML_HEXAGON_HOSTBUF=1 && \
