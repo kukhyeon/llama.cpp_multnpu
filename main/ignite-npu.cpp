@@ -50,6 +50,28 @@ static std::vector<llama_token> * g_output_tokens;
 static bool is_interacting  = false;
 static bool need_insert_eot = false;
 
+static void append_profile_csv_op_headers(std::ostream & os) {
+    for (int op = 0; op < GGML_OP_COUNT; ++op) {
+        const char * op_name = ggml_op_name((ggml_op) op);
+        if (op_name == nullptr || op_name[0] == '\0') {
+            op_name = "unknown";
+        }
+        os << ",prefill_cpu_op_" << op_name
+           << ",decode_cpu_op_" << op_name
+           << ",prefill_htp_op_" << op_name
+           << ",decode_htp_op_" << op_name;
+    }
+}
+
+static void append_profile_csv_op_values(std::ostream & os, const ggml_backend_sched_profile_data & prof) {
+    for (int op = 0; op < GGML_OP_COUNT; ++op) {
+        os << "," << prof.prefill_cpu_ops_by_type[op]
+           << "," << prof.decode_cpu_ops_by_type[op]
+           << "," << prof.prefill_htp_ops_by_type[op]
+           << "," << prof.decode_htp_ops_by_type[op];
+    }
+}
+
 
 // Process CPU time helper (user + kernel, sum over all threads)
 // - wall time measures "elapsed time"
@@ -136,8 +158,8 @@ std::tuple<int, double, int, double> llama_perf_context_print_custom(const struc
               << "," << prof.decode_sampling_ms
               << "," << prof.prefill_proc_cpu_ms
               << "," << prof.decode_proc_cpu_ms
-              << "," << (prof.prefill_proc_cpu_ms + prof.decode_proc_cpu_ms)
-              << "\n";
+              << "," << (prof.prefill_proc_cpu_ms + prof.decode_proc_cpu_ms);
+        append_profile_csv_op_values(file, prof);
         file.close();
     } else {
         // LLAMA_LOG_INFO("Failed to open file: %s\n", output_filename.c_str());
@@ -584,7 +606,9 @@ int main(int argc, char ** argv) {
         file << "decode_cpu_layers,decode_htp_layers,decode_cpu_ms,decode_htp_ms,";
         file << "total_ops,prefill_cpu_ops,decode_cpu_ops,prefill_htp_ops,decode_htp_ops,";
         file << "prefill_copy_ms,prefill_wait_ms,prefill_build_ms,prefill_sampling_ms,";
-        file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms,prefill_proc_cpu_ms,decode_proc_cpu_ms,proc_cpu_ms_total\n";
+        file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms,prefill_proc_cpu_ms,decode_proc_cpu_ms,proc_cpu_ms_total";
+        append_profile_csv_op_headers(file);
+        file << "\n";
         file.close();
     }
 
