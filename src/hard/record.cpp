@@ -251,6 +251,12 @@ void record_hard(std::atomic<bool>& sigterm, const DVFS& dvfs){
 	int test_index = 0;
 	std::vector<std::string> records;
     auto start_sys_time = std::chrono::system_clock::now();
+    if (dvfs.control_start_point != dvfs.zero_start_point) {
+        // if control_start_point time is given,
+        // now start_sys_time is replaced with the given control_start_point
+        start_sys_time = dvfs.control_start_point;
+    }
+
     do{
         // get records
 		records = get_hard_records(dvfs);

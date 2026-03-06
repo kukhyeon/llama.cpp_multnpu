@@ -18,6 +18,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <thread>
 #include <tuple>  // to accumulate json
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
@@ -38,6 +39,13 @@
 
 #include "nlohmann/json.hpp"
 
+
+// dvfs library
+#include "hard/record.h"
+#include "hard/dvfs.h"
+#include "hard/utils.h"
+#include "hard/affinity.h"
+
 using json = nlohmann::json;
 
 static llama_context           ** g_ctx;
@@ -49,6 +57,7 @@ static std::ostringstream       * g_output_ss;
 static std::vector<llama_token> * g_output_tokens;
 static bool is_interacting  = false;
 static bool need_insert_eot = false;
+std::atomic_bool sigterm(false);
 
 static void append_profile_csv_op_headers(std::ostream & os) {
     for (int op = 0; op < GGML_OP_COUNT; ++op) {
@@ -611,6 +620,15 @@ int main(int argc, char ** argv) {
         file << "\n";
         file.close();
     }
+
+    // dummy dvfs object
+    std::string device_name = "S25";
+    DVFS dvfs(device_name);
+    dvfs.control_start_point = start_sys_time; // need to be initialized to sync `record_hard` and `inference_stats`.
+
+    #if IGNITE_USE_SYSTEM_DVFS
+    std::thread record_thread = std::thread(record_hard, std::ref(sigterm), std::ref(dvfs));
+    #endif
 
     // Input json file instead of cli input
     std::vector<std::string> json_questions;
@@ -1277,6 +1295,10 @@ int main(int argc, char ** argv) {
             is_interacting = true;
         }
     }
+    
+    #if IGNITE_USE_SYSTEM_DVFS
+    sigterm = true;
+    #endif
 
     if (!path_session.empty() && params.prompt_cache_all && !params.prompt_cache_ro) {
         LOG("\n%s: saving final output to session file '%s'\n", __func__, path_session.c_str());
