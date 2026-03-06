@@ -625,6 +625,7 @@ int main(int argc, char ** argv) {
     std::string device_name = "S25";
     DVFS dvfs(device_name);
     dvfs.control_start_point = start_sys_time; // need to be initialized to sync `record_hard` and `inference_stats`.
+    dvfs.output_filename = params.output_dir + "/hardware_stats.csv";
 
     #if IGNITE_USE_SYSTEM_DVFS
     std::thread record_thread = std::thread(record_hard, std::ref(sigterm), std::ref(dvfs));
@@ -1298,6 +1299,7 @@ int main(int argc, char ** argv) {
     
     #if IGNITE_USE_SYSTEM_DVFS
     sigterm = true;
+    record_thread.join();
     #endif
 
     if (!path_session.empty() && params.prompt_cache_all && !params.prompt_cache_ro) {
