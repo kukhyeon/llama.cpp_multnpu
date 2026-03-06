@@ -217,8 +217,8 @@ int DVFS::init_fd_cache() {
         // S25 uses system() calls for RAM control, so we skip FD initialization for MIF.
         // We set fd_ready to true because CPU FDs are ready and RAM control doesn't need FDs.
         fd_ready = true;
-        return
-
+        return 0;
+    }
     // MIF(devfreq) fds (RAM)
     // Pixel 9 and S24 have same base path
     mif_fds.base = "/sys/devices/platform/17000010.devfreq_mif/devfreq/17000010.devfreq_mif";
@@ -395,6 +395,8 @@ int DVFS::set_ram_freq(const int freq_idx) {
         command += std::string("echo ") + std::to_string(1211000)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq; ");
         command += "\"";
 
+        return system(command.c_str());
+    }
     // max first, min last (policy-dependent, but this form is generally safe)
     if (write_fd_int(mif_fds.max_fd, clk) != 0) return 3;
     if (write_fd_int(mif_fds.min_fd, clk) != 0) return 4;
@@ -451,6 +453,8 @@ int DVFS::unset_ram_freq() {
         command += std::string("echo ") + std::to_string(350000)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq; ");
 
         command += "\"";
+        return system(command.c_str());
+    }
     if (write_fd_int(mif_fds.max_fd, max_clk) != 0) return 3;
     if (write_fd_int(mif_fds.min_fd, min_clk) != 0) return 4;
     return 0;
