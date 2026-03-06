@@ -13,6 +13,10 @@ const std::map<std::string, std::map<int, std::vector<int>>> DVFS::cpufreq = {
         { 7, { 672000, 768000, 864000, 960000, 1056000, 1152000, 1248000, 1344000, 1440000, 1536000, 1632000, 1728000, 1824000, 1920000, 2016000, 2112000, 2208000, 2304000, 2400000, 2496000, 2592000, 2688000, 2784000, 2880000, 2900000 } },
         { 9, { 672000, 768000, 864000, 960000, 1056000, 1152000, 1248000, 1344000, 1440000, 1536000, 1632000, 1728000, 1824000, 1920000, 2016000, 2112000, 2208000, 2304000, 2400000, 2496000, 2592000, 2688000, 2784000, 2880000, 2976000, 3072000, 3207000 } }
     }},
+    { "S25", {
+        { 0, { 384000, 556800, 748800, 960000, 1152000, 1363200, 1555200, 1785600, 1996800, 2227200, 2400000, 2745600, 2918400, 3072000, 3321600, 3532800 } },
+        { 6, { 1017600, 1209600, 1401600, 1689600, 1958400, 2246400, 2438400, 2649600, 2841600, 3072000, 3283200, 3513600, 3840000, 4089600, 4281600, 4473600 } }
+    }},
 	{ "Fold4", {
 		{ 0, { 300000, 441600, 556800, 691200, 806400, 940800, 1056000, 1132800, 1228800, 1324800, 1440000, 1555200, 1670400, 1804800, 1920000, 2016000} },
 		{ 4, { 633600, 768000, 883200, 998400, 1113600, 1209600, 1324800, 1440000, 1555200, 1651200, 1766400, 1881600, 1996800, 2112000, 2227200, 2342400, 2457600, 2572800, 2649600, 2745600 } },
@@ -28,6 +32,7 @@ const std::map<std::string, std::map<int, std::vector<int>>> DVFS::cpufreq = {
 const std::map<std::string, std::vector<int>> DVFS::ddrfreq = {
     { "S22_Ultra", { 547000, 768000, 1555000, 1708000, 2092000, 2736000, 3196000 } },
     { "S24", { 421000, 676000, 845000, 1014000, 1352000, 1539000, 1716000, 2028000, 2288000, 2730000, 3172000, 3738000, 4206000 } },
+    { "S25", { 547000, 1353000, 1555000, 1708000, 2092000, 2736000, 3187000, 3686000, 4224000, 4761000 } },
     { "Fold4", { 547000, 768000, 1555000, 1708000, 2092000, 2736000, 3196000 } },
     { "Pixel9", { 421000, 546000, 676000, 845000, 1014000, 1352000, 1539000, 1716000, 2028000, 2288000, 2730000, 3172000, 3744000 } }
 };
@@ -37,6 +42,7 @@ const std::map<std::string, std::vector<std::string>> DVFS::empty_thermal = {
     { "S22_Ultra", { "sdr0-pa0", "sdr1-pa0", "pm8350b_tz", "pm8350b-ibat-lvl0", "pm8350b-ibat-lvl1", "pm8350b-bcl-lvl0", "pm8350b-bcl-lvl1", "pm8350b-bcl-lvl2", "socd", "pmr735b_tz"}},
     { "Fold4", { "sdr0-pa0", "sdr1-pa0", "pm8350b_tz", "pm8350b-ibat-lvl0", "pm8350b-ibat-lvl1", "pm8350b-bcl-lvl0", "pm8350b-bcl-lvl1", "pm8350b-bcl-lvl2", "socd", "pmr735b_tz", "qcom,secure-non"}},
     { "S24", {}},
+    { "S25", {}},
     { "Pixel9", {}}
 };
 
@@ -207,6 +213,13 @@ int DVFS::init_fd_cache() {
     }
 
     // MIF(devfreq) fds (RAM)
+    if (get_device_name() == "S25") {
+        // S25 uses system() calls for RAM control, so we skip FD initialization for MIF.
+        // We set fd_ready to true because CPU FDs are ready and RAM control doesn't need FDs.
+        fd_ready = true;
+        return
+
+    // MIF(devfreq) fds (RAM)
     // Pixel 9 and S24 have same base path
     mif_fds.base = "/sys/devices/platform/17000010.devfreq_mif/devfreq/17000010.devfreq_mif";
     {
@@ -341,6 +354,47 @@ int DVFS::set_ram_freq(const int freq_idx) {
 
     int clk = table[freq_idx];
 
+    if (this->get_device_name() == "S25") {
+        std::string command = "su -c \"";
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/boost_freq; ");
+        command += "echo 0 > /sys/devices/system/cpu/bus_dcvs/DDRQOS/boost_freq; ";
+        // ===================================== DDR monitor =====================================
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/min_freq; ");
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/max_freq; ");
+        
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/min_freq; ");
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/max_freq; ");
+        
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/min_freq; ");
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/max_freq; ");
+        
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
+        
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
+        command += std::string("chmod 444 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
+        //=================================== DDRQOS monitor ===================================
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/min_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/max_freq; ");
+
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/min_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/max_freq; ");
+
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
+        command += std::string("chmod 444 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
+
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
+        command += std::string("chmod 444 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
+        //=================================== LLCC/bwmon monitor ===================================
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b3400.qcom,bwmon-llcc-gold/second_vote_limit; ");
+        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b7400.qcom,bwmon-llcc-prime/second_vote_limit; ");
+        //=================================== LLCC Clock monitor=====================================
+        command += std::string("echo ") + std::to_string(1211000)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq; ");
+        command += "\"";
+
     // max first, min last (policy-dependent, but this form is generally safe)
     if (write_fd_int(mif_fds.max_fd, clk) != 0) return 3;
     if (write_fd_int(mif_fds.min_fd, clk) != 0) return 4;
@@ -359,6 +413,44 @@ int DVFS::unset_ram_freq() {
     int min_clk = table.front();
     int max_clk = table.back();
 
+    if (this->get_device_name() == "S25") {
+        std::string command = "su -c \"";
+        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/boost_freq; ");
+        command += "echo 0 > /sys/devices/system/cpu/bus_dcvs/DDRQOS/boost_freq; ";
+        // ===================================== DDR monitor =====================================
+        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/min_freq; ");
+        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/max_freq; ");
+        
+        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/min_freq; ");
+        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/max_freq; ");
+        
+        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/min_freq; ");
+        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/max_freq; ");
+        
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
+        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
+
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
+        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
+        //=================================== DDRQOS monitor ===================================
+        command += std::string("echo ") + std::to_string(0)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/min_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/max_freq; ");
+
+        command += std::string("echo ") + std::to_string(0)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/min_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/max_freq; ");
+
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
+        command += std::string("echo ") + std::to_string(0)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
+
+        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
+        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
+        //=================================== LLCC/bwmon monitor ===================================
+        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b3400.qcom,bwmon-llcc-gold/second_vote_limit; ");
+        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b7400.qcom,bwmon-llcc-prime/second_vote_limit; ");
+        //=================================== LLCC Clock monitor=====================================
+        command += std::string("echo ") + std::to_string(350000)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq; ");
+
+        command += "\"";
     if (write_fd_int(mif_fds.max_fd, max_clk) != 0) return 3;
     if (write_fd_int(mif_fds.min_fd, min_clk) != 0) return 4;
     return 0;
