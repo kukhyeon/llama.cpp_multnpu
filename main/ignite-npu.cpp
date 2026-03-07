@@ -59,6 +59,15 @@ static bool is_interacting  = false;
 static bool need_insert_eot = false;
 std::atomic_bool sigterm(false);
 
+static bool should_write_op_breakdown_csv() {
+    const char * env = std::getenv("IGNITE_CSV_OP_BREAKDOWN");
+    if (env == nullptr) {
+        return false;
+    }
+
+    return std::strcmp(env, "1") == 0 || std::strcmp(env, "true") == 0 || std::strcmp(env, "TRUE") == 0;
+}
+
 static void append_profile_csv_op_headers(std::ostream & os) {
     for (int op = 0; op < GGML_OP_COUNT; ++op) {
         const char * op_name = ggml_op_name((ggml_op) op);
@@ -168,7 +177,10 @@ std::tuple<int, double, int, double> llama_perf_context_print_custom(const struc
               << "," << prof.prefill_proc_cpu_ms
               << "," << prof.decode_proc_cpu_ms
               << "," << (prof.prefill_proc_cpu_ms + prof.decode_proc_cpu_ms);
-        append_profile_csv_op_values(file, prof);
+              if (should_write_op_breakdown_csv()) {
+                append_profile_csv_op_values(file, prof);
+            }
+        file << "\n";
         file.close();
     } else {
         // LLAMA_LOG_INFO("Failed to open file: %s\n", output_filename.c_str());
@@ -616,7 +628,9 @@ int main(int argc, char ** argv) {
         file << "total_ops,prefill_cpu_ops,decode_cpu_ops,prefill_htp_ops,decode_htp_ops,";
         file << "prefill_copy_ms,prefill_wait_ms,prefill_build_ms,prefill_sampling_ms,";
         file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms,prefill_proc_cpu_ms,decode_proc_cpu_ms,proc_cpu_ms_total";
-        append_profile_csv_op_headers(file);
+        if (should_write_op_breakdown_csv()) {
+            append_profile_csv_op_headers(file);
+        }
         file << "\n";
         file.close();
     }
