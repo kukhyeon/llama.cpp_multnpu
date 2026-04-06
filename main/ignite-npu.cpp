@@ -1239,8 +1239,7 @@ int main(int argc, char ** argv) {
                     n_past = 0; n_consumed = 0; waiting_for_first_input = true;
                     common_sampler_reset(smpl);
                     
-                    // reset dvfs 
-                    reset_dvfs();
+                    // reset dvfs will be not called after query finished
                     prefill_dvfs_applied = false;
                     decode_dvfs_applied = false;
                     generation_started = false;
