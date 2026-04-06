@@ -214,11 +214,43 @@ int DVFS::init_fd_cache() {
 
     // MIF(devfreq) fds (RAM)
     if (get_device_name() == "S25") {
-        // S25 RAM control is limited to DDR boost. Keep the RAM path simple and cache
-        // just this writable sysfs node instead of issuing large su/system command batches.
-        s25_ddr_boost_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/boost_freq");
-        if (s25_ddr_boost_fd < 0) {
-            fprintf(stderr, "[DVFS] S25 DDR boost open failed (need root?)\n");
+        // S25 uses bus_dcvs RAM voters. Keep the chmod-dependent prime-latfloor nodes
+        // excluded, but cache the remaining writable nodes for direct FD-based control.
+        s25_ram_fds.ddr_boost_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/boost_freq");
+        s25_ram_fds.ddrqos_boost_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/boost_freq");
+
+        s25_ram_fds.ddr_gold_min_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/min_freq");
+        s25_ram_fds.ddr_gold_max_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/max_freq");
+        s25_ram_fds.ddr_gold_compute_min_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/min_freq");
+        s25_ram_fds.ddr_gold_compute_max_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/max_freq");
+        s25_ram_fds.ddr_prime_min_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/min_freq");
+        s25_ram_fds.ddr_prime_max_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/max_freq");
+
+        s25_ram_fds.ddrqos_gold_min_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/min_freq");
+        s25_ram_fds.ddrqos_gold_max_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/max_freq");
+        s25_ram_fds.ddrqos_prime_min_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/min_freq");
+        s25_ram_fds.ddrqos_prime_max_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/max_freq");
+
+        s25_ram_fds.llcc_gold_vote_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/LLCC/240b3400.qcom,bwmon-llcc-gold/second_vote_limit");
+        s25_ram_fds.llcc_prime_vote_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/LLCC/240b7400.qcom,bwmon-llcc-prime/second_vote_limit");
+        s25_ram_fds.llcc_boost_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq");
+
+        if (s25_ram_fds.ddr_boost_fd < 0 ||
+            s25_ram_fds.ddrqos_boost_fd < 0 ||
+            s25_ram_fds.ddr_gold_min_fd < 0 ||
+            s25_ram_fds.ddr_gold_max_fd < 0 ||
+            s25_ram_fds.ddr_gold_compute_min_fd < 0 ||
+            s25_ram_fds.ddr_gold_compute_max_fd < 0 ||
+            s25_ram_fds.ddr_prime_min_fd < 0 ||
+            s25_ram_fds.ddr_prime_max_fd < 0 ||
+            s25_ram_fds.ddrqos_gold_min_fd < 0 ||
+            s25_ram_fds.ddrqos_gold_max_fd < 0 ||
+            s25_ram_fds.ddrqos_prime_min_fd < 0 ||
+            s25_ram_fds.ddrqos_prime_max_fd < 0 ||
+            s25_ram_fds.llcc_gold_vote_fd < 0 ||
+            s25_ram_fds.llcc_prime_vote_fd < 0 ||
+            s25_ram_fds.llcc_boost_fd < 0) {
+            fprintf(stderr, "[DVFS] S25 RAM voter open failed (need root?)\n");
             close_fd_cache();
             fd_ready = false;
             return -2;
@@ -286,7 +318,21 @@ void DVFS::close_fd_cache_nolock() {
 
     close_fd(mif_fds.min_fd);
     close_fd(mif_fds.max_fd);
-    close_fd(s25_ddr_boost_fd);
+    close_fd(s25_ram_fds.ddr_boost_fd);
+    close_fd(s25_ram_fds.ddrqos_boost_fd);
+    close_fd(s25_ram_fds.ddr_gold_min_fd);
+    close_fd(s25_ram_fds.ddr_gold_max_fd);
+    close_fd(s25_ram_fds.ddr_gold_compute_min_fd);
+    close_fd(s25_ram_fds.ddr_gold_compute_max_fd);
+    close_fd(s25_ram_fds.ddr_prime_min_fd);
+    close_fd(s25_ram_fds.ddr_prime_max_fd);
+    close_fd(s25_ram_fds.ddrqos_gold_min_fd);
+    close_fd(s25_ram_fds.ddrqos_gold_max_fd);
+    close_fd(s25_ram_fds.ddrqos_prime_min_fd);
+    close_fd(s25_ram_fds.ddrqos_prime_max_fd);
+    close_fd(s25_ram_fds.llcc_gold_vote_fd);
+    close_fd(s25_ram_fds.llcc_prime_vote_fd);
+    close_fd(s25_ram_fds.llcc_boost_fd);
 
     fd_ready = false;
 }
@@ -363,10 +409,24 @@ int DVFS::set_ram_freq(const int freq_idx) {
     int clk = table[freq_idx];
 
     if (this->get_device_name() == "S25") {
-        // Only DDR boost is reliable on S25. Pin it to the highest supported DDR
-        // rate and leave the other RAM control nodes untouched.
-        const int boost_clk = table.back();
-        if (write_fd_int(s25_ddr_boost_fd, boost_clk) != 0) return 3;
+        if (write_fd_int(s25_ram_fds.ddr_boost_fd, clk) != 0) return 3;
+        if (write_fd_int(s25_ram_fds.ddrqos_boost_fd, 0) != 0) return 4;
+
+        if (write_fd_int(s25_ram_fds.ddr_gold_min_fd, clk) != 0) return 5;
+        if (write_fd_int(s25_ram_fds.ddr_gold_max_fd, clk) != 0) return 6;
+        if (write_fd_int(s25_ram_fds.ddr_gold_compute_min_fd, clk) != 0) return 7;
+        if (write_fd_int(s25_ram_fds.ddr_gold_compute_max_fd, clk) != 0) return 8;
+        if (write_fd_int(s25_ram_fds.ddr_prime_min_fd, clk) != 0) return 9;
+        if (write_fd_int(s25_ram_fds.ddr_prime_max_fd, clk) != 0) return 10;
+
+        if (write_fd_int(s25_ram_fds.ddrqos_gold_min_fd, 1) != 0) return 11;
+        if (write_fd_int(s25_ram_fds.ddrqos_gold_max_fd, 1) != 0) return 12;
+        if (write_fd_int(s25_ram_fds.ddrqos_prime_min_fd, 1) != 0) return 13;
+        if (write_fd_int(s25_ram_fds.ddrqos_prime_max_fd, 1) != 0) return 14;
+
+        if (write_fd_int(s25_ram_fds.llcc_gold_vote_fd, clk) != 0) return 15;
+        if (write_fd_int(s25_ram_fds.llcc_prime_vote_fd, clk) != 0) return 16;
+        if (write_fd_int(s25_ram_fds.llcc_boost_fd, 1211000) != 0) return 17;
         return 0;
     }
     // max first, min last (policy-dependent, but this form is generally safe)
@@ -388,7 +448,24 @@ int DVFS::unset_ram_freq() {
     int max_clk = table.back();
 
     if (this->get_device_name() == "S25") {
-        if (write_fd_int(s25_ddr_boost_fd, min_clk) != 0) return 3;
+        if (write_fd_int(s25_ram_fds.ddr_boost_fd, min_clk) != 0) return 3;
+        if (write_fd_int(s25_ram_fds.ddrqos_boost_fd, 0) != 0) return 4;
+
+        if (write_fd_int(s25_ram_fds.ddr_gold_min_fd, min_clk) != 0) return 5;
+        if (write_fd_int(s25_ram_fds.ddr_gold_max_fd, max_clk) != 0) return 6;
+        if (write_fd_int(s25_ram_fds.ddr_gold_compute_min_fd, min_clk) != 0) return 7;
+        if (write_fd_int(s25_ram_fds.ddr_gold_compute_max_fd, max_clk) != 0) return 8;
+        if (write_fd_int(s25_ram_fds.ddr_prime_min_fd, min_clk) != 0) return 9;
+        if (write_fd_int(s25_ram_fds.ddr_prime_max_fd, max_clk) != 0) return 10;
+
+        if (write_fd_int(s25_ram_fds.ddrqos_gold_min_fd, 0) != 0) return 11;
+        if (write_fd_int(s25_ram_fds.ddrqos_gold_max_fd, 1) != 0) return 12;
+        if (write_fd_int(s25_ram_fds.ddrqos_prime_min_fd, 0) != 0) return 13;
+        if (write_fd_int(s25_ram_fds.ddrqos_prime_max_fd, 1) != 0) return 14;
+
+        if (write_fd_int(s25_ram_fds.llcc_gold_vote_fd, max_clk) != 0) return 15;
+        if (write_fd_int(s25_ram_fds.llcc_prime_vote_fd, max_clk) != 0) return 16;
+        if (write_fd_int(s25_ram_fds.llcc_boost_fd, 350000) != 0) return 17;
         return 0;
     }
     if (write_fd_int(mif_fds.max_fd, max_clk) != 0) return 3;

@@ -71,9 +71,30 @@ private:
         std::string base;
     };
 
+    struct S25RamFD {
+        int ddr_boost_fd = -1;
+        int ddrqos_boost_fd = -1;
+
+        int ddr_gold_min_fd = -1;
+        int ddr_gold_max_fd = -1;
+        int ddr_gold_compute_min_fd = -1;
+        int ddr_gold_compute_max_fd = -1;
+        int ddr_prime_min_fd = -1;
+        int ddr_prime_max_fd = -1;
+
+        int ddrqos_gold_min_fd = -1;
+        int ddrqos_gold_max_fd = -1;
+        int ddrqos_prime_min_fd = -1;
+        int ddrqos_prime_max_fd = -1;
+
+        int llcc_gold_vote_fd = -1;
+        int llcc_prime_vote_fd = -1;
+        int llcc_boost_fd = -1;
+    };
+
     std::vector<CpuPolicyFD> cpu_fds;
     MifFD mif_fds;
-    int s25_ddr_boost_fd = -1;
+    S25RamFD s25_ram_fds;
     bool fd_ready = false;
     std::mutex io_mu; // mutex lock guard for fd cache I/O
 
