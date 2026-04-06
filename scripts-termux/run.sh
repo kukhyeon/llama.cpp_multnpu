@@ -66,6 +66,7 @@ taskset fe ./bin/llama-ignite-npu \
     -m /data/local/tmp/gguf/qwen-3-1.7b-q4_k_m.gguf \
     -t 6 -tb 6 -i -cnv -ub 512 -b 512 -fa off \
     --json-path data/qwen3_prefill_64_20.json \
+    --max-query-number 20 \
     --strict on \
     --strict-limit 128 \
     --output-dir output \
