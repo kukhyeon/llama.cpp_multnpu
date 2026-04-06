@@ -391,16 +391,12 @@ extern "C" {
         double   decode_build_ms;
         double   decode_sampling_ms;
 
-        // Process CPU time (user+kernel), ms (sum over all threads)
-        double   prefill_proc_cpu_ms;
-        double   decode_proc_cpu_ms;
     };
 
     GGML_API void ggml_backend_sched_profile_reset(void);
     GGML_API void ggml_backend_sched_profile_set_phase(enum ggml_backend_sched_profile_phase phase);
     GGML_API void ggml_backend_sched_profile_add_build_ms(double build_ms);
     GGML_API void ggml_backend_sched_profile_add_sampling_ms(double sampling_ms);
-    GGML_API void ggml_backend_sched_profile_add_proc_cpu_ms(double proc_cpu_ms);
     GGML_API struct ggml_backend_sched_profile_data ggml_backend_sched_profile_get(void);
 
     //

@@ -90,39 +90,6 @@ static void append_profile_csv_op_values(std::ostream & os, const ggml_backend_s
     }
 }
 
-
-// Process CPU time helper (user + kernel, sum over all threads)
-// - wall time measures "elapsed time"
-// - process CPU time measures "how much CPU actually executed"
-static int64_t get_process_cpu_time_us() {
-#if defined(_WIN32)
-    FILETIME ft_create, ft_exit, ft_kernel, ft_user;
-    if (!GetProcessTimes(GetCurrentProcess(), &ft_create, &ft_exit, &ft_kernel, &ft_user)) {
-        return -1;
-    }
-    ULARGE_INTEGER k;
-    k.LowPart  = ft_kernel.dwLowDateTime;
-    k.HighPart = ft_kernel.dwHighDateTime;
-    ULARGE_INTEGER u;
-    u.LowPart  = ft_user.dwLowDateTime;
-    u.HighPart = ft_user.dwHighDateTime;
-    // FILETIME is in 100-ns units
-    return (int64_t) ((k.QuadPart + u.QuadPart) / 10);
-#elif defined(CLOCK_PROCESS_CPUTIME_ID)
-    struct timespec ts;
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0) {
-        return -1;
-    }
-    return (int64_t) ts.tv_sec * 1000000 + (int64_t) ts.tv_nsec / 1000;
-#else
-    const clock_t c = std::clock();
-    if (c == (clock_t) -1) {
-        return -1;
-    }
-    return (int64_t) ((double) c / (double) CLOCKS_PER_SEC * 1e6);
-#endif
-}
-
 void ctx_kv_cache_clear(struct llama_context * ctx) {
     //llama_kv_cache_clear(ctx); //deprecated
     auto* mem = llama_get_memory(ctx);
@@ -173,10 +140,7 @@ std::tuple<int, double, int, double> llama_perf_context_print_custom(const struc
               << "," << prof.decode_copy_ms
               << "," << prof.decode_wait_ms
               << "," << prof.decode_build_ms
-              << "," << prof.decode_sampling_ms
-              << "," << prof.prefill_proc_cpu_ms
-              << "," << prof.decode_proc_cpu_ms
-              << "," << (prof.prefill_proc_cpu_ms + prof.decode_proc_cpu_ms);
+              << "," << prof.decode_sampling_ms;
               if (should_write_op_breakdown_csv()) {
                 append_profile_csv_op_values(file, prof);
             }
@@ -633,7 +597,7 @@ int main(int argc, char ** argv) {
         file << "decode_cpu_layers,decode_htp_layers,decode_cpu_ms,decode_htp_ms,";
         file << "total_ops,prefill_cpu_ops,decode_cpu_ops,prefill_htp_ops,decode_htp_ops,";
         file << "prefill_copy_ms,prefill_wait_ms,prefill_build_ms,prefill_sampling_ms,";
-        file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms,prefill_proc_cpu_ms,decode_proc_cpu_ms,proc_cpu_ms_total";
+        file << "decode_copy_ms,decode_wait_ms,decode_build_ms,decode_sampling_ms";
         if (should_write_op_breakdown_csv()) {
             append_profile_csv_op_headers(file);
         }
@@ -991,16 +955,9 @@ int main(int argc, char ** argv) {
 
                 GGML_ASSERT(n_eval <= params.n_batch);
 
-                const int64_t t_cpu0_us = get_process_cpu_time_us();
-
                 if (llama_decode(ctx, llama_batch_get_one(embd.data(), n_eval))) {
                     LOG_ERR("%s : failed to eval\n", __func__);
                     return 1;
-                }
-
-                const int64_t t_cpu1_us = get_process_cpu_time_us();
-                if (t_cpu0_us >= 0 && t_cpu1_us >= 0) {
-                    ggml_backend_sched_profile_add_proc_cpu_ms((t_cpu1_us - t_cpu0_us) / 1000.0);
                 }
 
                 n_past += n_eval;
@@ -1041,16 +998,11 @@ int main(int argc, char ** argv) {
                 LOG_DBG("saved session to %s\n", path_session.c_str());
             }
 
-            const int64_t t_sample_cpu0_us = get_process_cpu_time_us();
             const int64_t t_sample_us = ggml_time_us();
             const llama_token id = common_sampler_sample(smpl, ctx, -1);
 
             common_sampler_accept(smpl, id, /* accept_grammar= */ true);
             ggml_backend_sched_profile_add_sampling_ms((ggml_time_us() - t_sample_us) / 1000.0);
-            const int64_t t_sample_cpu1_us = get_process_cpu_time_us();
-            if (t_sample_cpu0_us >= 0 && t_sample_cpu1_us >= 0) {
-                ggml_backend_sched_profile_add_proc_cpu_ms((t_sample_cpu1_us - t_sample_cpu0_us) / 1000.0);
-            }
 
             // LOG_DBG("last: %s\n", string_from(ctx, smpl->prev.to_vector()).c_str());
 
