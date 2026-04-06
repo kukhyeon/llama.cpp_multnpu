@@ -214,8 +214,15 @@ int DVFS::init_fd_cache() {
 
     // MIF(devfreq) fds (RAM)
     if (get_device_name() == "S25") {
-        // S25 uses system() calls for RAM control, so we skip FD initialization for MIF.
-        // We set fd_ready to true because CPU FDs are ready and RAM control doesn't need FDs.
+        // S25 RAM control is limited to DDR boost. Keep the RAM path simple and cache
+        // just this writable sysfs node instead of issuing large su/system command batches.
+        s25_ddr_boost_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDR/boost_freq");
+        if (s25_ddr_boost_fd < 0) {
+            fprintf(stderr, "[DVFS] S25 DDR boost open failed (need root?)\n");
+            close_fd_cache();
+            fd_ready = false;
+            return -2;
+        }
         fd_ready = true;
         return 0;
     }
@@ -279,6 +286,7 @@ void DVFS::close_fd_cache_nolock() {
 
     close_fd(mif_fds.min_fd);
     close_fd(mif_fds.max_fd);
+    close_fd(s25_ddr_boost_fd);
 
     fd_ready = false;
 }
@@ -355,47 +363,11 @@ int DVFS::set_ram_freq(const int freq_idx) {
     int clk = table[freq_idx];
 
     if (this->get_device_name() == "S25") {
-        std::string command = "su -c \"";
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/boost_freq; ");
-        command += "echo 0 > /sys/devices/system/cpu/bus_dcvs/DDRQOS/boost_freq; ";
-        // ===================================== DDR monitor =====================================
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/min_freq; ");
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/max_freq; ");
-        
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/min_freq; ");
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/max_freq; ");
-        
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/min_freq; ");
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/max_freq; ");
-        
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
-        
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
-        command += std::string("chmod 444 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
-        //=================================== DDRQOS monitor ===================================
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/min_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/max_freq; ");
-
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/min_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/max_freq; ");
-
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
-        command += std::string("chmod 444 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
-
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
-        command += std::string("chmod 444 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
-        //=================================== LLCC/bwmon monitor ===================================
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b3400.qcom,bwmon-llcc-gold/second_vote_limit; ");
-        command += std::string("echo ") + std::to_string(clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b7400.qcom,bwmon-llcc-prime/second_vote_limit; ");
-        //=================================== LLCC Clock monitor=====================================
-        command += std::string("echo ") + std::to_string(1211000)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq; ");
-        command += "\"";
-
-        return system(command.c_str());
+        // Only DDR boost is reliable on S25. Pin it to the highest supported DDR
+        // rate and leave the other RAM control nodes untouched.
+        const int boost_clk = table.back();
+        if (write_fd_int(s25_ddr_boost_fd, boost_clk) != 0) return 3;
+        return 0;
     }
     // max first, min last (policy-dependent, but this form is generally safe)
     if (write_fd_int(mif_fds.max_fd, clk) != 0) return 3;
@@ -416,44 +388,8 @@ int DVFS::unset_ram_freq() {
     int max_clk = table.back();
 
     if (this->get_device_name() == "S25") {
-        std::string command = "su -c \"";
-        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/boost_freq; ");
-        command += "echo 0 > /sys/devices/system/cpu/bus_dcvs/DDRQOS/boost_freq; ";
-        // ===================================== DDR monitor =====================================
-        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/min_freq; ");
-        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold/max_freq; ");
-        
-        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/min_freq; ");
-        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:gold-compute/max_freq; ");
-        
-        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/min_freq; ");
-        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime/max_freq; ");
-        
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
-        command += std::string("echo ") + std::to_string(min_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/min_freq; ");
-
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
-        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDR/soc:qcom,memlat:ddr:prime-latfloor/max_freq; ");
-        //=================================== DDRQOS monitor ===================================
-        command += std::string("echo ") + std::to_string(0)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/min_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:gold/max_freq; ");
-
-        command += std::string("echo ") + std::to_string(0)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/min_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/max_freq; ");
-
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
-        command += std::string("echo ") + std::to_string(0)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/min_freq; ");
-
-        command += std::string("chmod 644 /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
-        command += std::string("echo ") + std::to_string(1)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime-latfloor/max_freq; ");
-        //=================================== LLCC/bwmon monitor ===================================
-        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b3400.qcom,bwmon-llcc-gold/second_vote_limit; ");
-        command += std::string("echo ") + std::to_string(max_clk)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/240b7400.qcom,bwmon-llcc-prime/second_vote_limit; ");
-        //=================================== LLCC Clock monitor=====================================
-        command += std::string("echo ") + std::to_string(350000)+ std::string(" > /sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq; ");
-
-        command += "\"";
-        return system(command.c_str());
+        if (write_fd_int(s25_ddr_boost_fd, min_clk) != 0) return 3;
+        return 0;
     }
     if (write_fd_int(mif_fds.max_fd, max_clk) != 0) return 3;
     if (write_fd_int(mif_fds.min_fd, min_clk) != 0) return 4;

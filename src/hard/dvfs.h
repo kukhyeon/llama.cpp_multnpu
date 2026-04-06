@@ -73,6 +73,7 @@ private:
 
     std::vector<CpuPolicyFD> cpu_fds;
     MifFD mif_fds;
+    int s25_ddr_boost_fd = -1;
     bool fd_ready = false;
     std::mutex io_mu; // mutex lock guard for fd cache I/O
 
