@@ -59,6 +59,15 @@ static bool is_interacting  = false;
 static bool need_insert_eot = false;
 std::atomic_bool sigterm(false);
 
+// condition check, if `ask == false` then sleep_for(layer_pause)
+// last_layer: prevent to duplicate sleep in same layer
+struct ignite_layer_pause_state {
+    int sleep_ms = 0;
+    int n_layer = 0;
+    bool enabled = false;
+    int last_layer = -1;
+};
+
 static bool should_write_op_breakdown_csv() {
     const char * env = std::getenv("IGNITE_CSV_OP_BREAKDOWN");
     if (env == nullptr) {
@@ -121,6 +130,59 @@ static int64_t get_process_cpu_time_us() {
     }
     return (int64_t) ((double) c / (double) CLOCKS_PER_SEC * 1e6);
 #endif
+}
+
+// Parshing layer signal
+static int parse_l_out_layer_id(const char * name) {
+    if (name == nullptr) {
+        return -1;
+    }
+
+    // l_out-*: end of each layers of qwen3 (maybe)
+    constexpr char prefix[] = "l_out-";
+    if (std::strncmp(name, prefix, sizeof(prefix) - 1) != 0) {
+        return -1;
+    }
+
+    int layer_id = -1;
+    if (std::sscanf(name + sizeof(prefix) - 1, "%d", &layer_id) != 1) {
+        return -1;
+    }
+
+    return layer_id;
+}
+
+// Ignore if empty state & pause off & not layer tensor
+static bool ignite_layer_pause_cb(struct ggml_tensor * t, bool ask, void * user_data) {
+    auto * state = static_cast<ignite_layer_pause_state *>(user_data);
+    if (state == nullptr || t == nullptr || state->sleep_ms <= 0 || !state->enabled || state->n_layer <= 0) {
+        return false;
+    }
+
+    const int layer_id = parse_l_out_layer_id(t->name);
+    if (layer_id < 0) {
+        return false;
+    }
+
+    // Pause only between layers, not after the last layer.
+    if (layer_id >= state->n_layer - 1) {
+        return false;
+    }
+
+    if (ask) {
+        return true;
+    }
+
+    // skip last layer
+    if (layer_id == state->last_layer) {
+        return true;
+    }
+
+    state->last_layer = layer_id;
+    LOG_INF("layer_pause: layer %d/%d, sleep %d ms\n",
+            layer_id + 1, state->n_layer, state->sleep_ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(state->sleep_ms));
+    return true;
 }
 
 void ctx_kv_cache_clear(struct llama_context * ctx) {
@@ -315,6 +377,13 @@ int main(int argc, char ** argv) {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     common_sampler * smpl = nullptr;
+    ignite_layer_pause_state layer_pause_state;
+
+    if (params.layer_pause > 0) {
+        layer_pause_state.sleep_ms = params.layer_pause;
+        params.cb_eval = ignite_layer_pause_cb;
+        params.cb_eval_user_data = &layer_pause_state;
+    }
 
     g_model = &model;
     g_ctx = &ctx;
@@ -330,6 +399,10 @@ int main(int argc, char ** argv) {
     ctx   = llama_init->context();
     model = llama_init->model();
     smpl  = llama_init->sampler(0);
+
+    if (params.layer_pause > 0 && model != nullptr) {
+        layer_pause_state.n_layer = llama_model_n_layer(model);
+    }
 
     if (ctx == NULL) {
         LOG_ERR("%s: error: unable to create context\n", __func__);
@@ -967,6 +1040,12 @@ int main(int argc, char ** argv) {
                     prefill_dvfs_applied = true;
                 }
                 int n_eval = (int) embd.size();
+                // layer pause
+                if (params.layer_pause > 0) {
+                    layer_pause_state.enabled = !generation_started && n_eval > 1;
+                    layer_pause_state.last_layer = -1;
+                }
+
                 LOG_DBG("eval: %s\n", string_from(ctx, embd).c_str());
 
                 GGML_ASSERT(n_eval <= params.n_batch);
@@ -1003,6 +1082,12 @@ int main(int argc, char ** argv) {
         if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
             // Phase clock control before decode phase
             if (!generation_started) {
+                // Stop layer pause
+                if (params.layer_pause > 0) {
+                    layer_pause_state.enabled = false;
+                    layer_pause_state.last_layer = -1;
+                }
+
                 if (!decode_dvfs_applied) {
                     apply_dvfs(params.cpu_d, params.ram_d);
                     decode_dvfs_applied = true;
@@ -1247,6 +1332,12 @@ int main(int argc, char ** argv) {
                     prefill_dvfs_applied = false;
                     decode_dvfs_applied = false;
                     generation_started = false;
+
+                    if (params.layer_pause > 0) {
+                        layer_pause_state.enabled = false;
+                        layer_pause_state.last_layer = -1;
+                    }
+
                     n_remain = params.n_predict;
                     ga_i = 0;
                     is_antiprompt = false;
