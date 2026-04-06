@@ -336,6 +336,12 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    auto * ig = get_ignite_params(ctx);
+    if (ig == nullptr) {
+        LOG_ERR("%s: failed to get ignite params\n", __func__);
+        return 1;
+    }
+
     llama_memory_t mem = llama_get_memory(ctx);
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
@@ -637,17 +643,15 @@ int main(int argc, char ** argv) {
 
     // dummy dvfs object
     const std::string device_name =
-        params.device_name.empty() ? "S25" : params.device_name;
+        std::strlen(ig->device_name) > 0 ? ig->device_name : "S25";
 
     DVFS dvfs(device_name);
     dvfs.control_start_point = start_sys_time;
     dvfs.output_filename = params.output_dir + "/hardware_stats.csv";
 
-    const bool want_prefill_dvfs = params.cpu_clk_idx_p >= 0 || params.ram_clk_idx_p >= 0;
-    const bool want_decode_dvfs  = params.cpu_clk_idx_d >= 0 || params.ram_clk_idx_d >= 0;
+    const bool want_prefill_dvfs = ig->cpu_clk_idx_p >= 0 || ig->ram_clk_idx_p >= 0;
+    const bool want_decode_dvfs  = ig->cpu_clk_idx_d >= 0 || ig->ram_clk_idx_d >= 0;
     bool runtime_dvfs_ready = false;
-    bool prefill_dvfs_applied = false;
-    bool decode_dvfs_applied = false;
 
     if (want_prefill_dvfs || want_decode_dvfs) {
         runtime_dvfs_ready = (dvfs.init_fd_cache() == 0);
@@ -961,10 +965,25 @@ int main(int argc, char ** argv) {
             }
 
             if (!embd.empty()) {
-                // Initial clock (Prefill phase)
-                if (!generation_started && !prefill_dvfs_applied) {
-                    apply_dvfs(params.cpu_clk_idx_p, params.ram_clk_idx_p);
-                    prefill_dvfs_applied = true;
+                // prefill/decode detector
+                if (!generation_started) {
+                    // prefill phase
+                    if (!prefill_active && ig->is_ignite_active) {
+                        apply_dvfs(ig->cpu_clk_idx_p, ig->ram_clk_idx_p);
+                    }
+                    if (!prefill_active) {
+                        prefill_active = true;
+                        decode_active = false;
+                    }
+                } else {
+                    // decode phase
+                    if (!decode_active && ig->is_ignite_active) {
+                        apply_dvfs(ig->cpu_clk_idx_d, ig->ram_clk_idx_d);
+                    }
+                    if (!decode_active) {
+                        prefill_active = false;
+                        decode_active = true;
+                    }
                 }
                 int n_eval = (int) embd.size();
 
@@ -1002,11 +1021,10 @@ int main(int argc, char ** argv) {
         embd.clear();
 
         if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
-            // Phase clock control before decode phase
             if (!generation_started) {
-                if (!decode_dvfs_applied) {
-                    apply_dvfs(params.cpu_clk_idx_d, params.ram_clk_idx_d);
-                    decode_dvfs_applied = true;
+                if (ig->phase_pause > 0) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(ig->phase_pause));
                 }
             }
 
@@ -1238,8 +1256,8 @@ int main(int argc, char ** argv) {
                     common_sampler_reset(smpl);
                     
                     // reset dvfs will be not called after query finished
-                    prefill_dvfs_applied = false;
-                    decode_dvfs_applied = false;
+                    prefill_active = false;
+                    decode_active = false;
                     generation_started = false;
 
                     n_remain = params.n_predict;
