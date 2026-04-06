@@ -7,14 +7,18 @@
 #   $2: prefill RAM DVFS index
 #   $3: decode CPU DVFS index
 #   $4: decode RAM DVFS index
-#   $5: token pause in ms
+#   $5: phase pause in ms
+#   $6: token pause in ms
+#   $7: layer pause in ms
 
 DEV="${DEV:-S25}"
 CPU_P="${1:-15}"
 RAM_P="${2:-9}"
 CPU_D="${3:-15}"
 RAM_D="${4:-9}"
-TOKEN_PAUSE_MS="${5:-0}"
+PHASE_PAUSE_MS="${5:-0}"
+TOKEN_PAUSE_MS="${6:-0}"
+LAYER_PAUSE_MS="${7:-0}"
 
 restore_system_state() {
     status=$?
@@ -47,7 +51,9 @@ sleep 2
 
 echo "[setup] DVFS device: $DEV"
 echo "[setup] DVFS indices: prefill(cpu=$CPU_P, ram=$RAM_P), decode(cpu=$CPU_D, ram=$RAM_D)"
+echo "[setup] Phase pause: ${PHASE_PAUSE_MS}ms"
 echo "[setup] Token pause: ${TOKEN_PAUSE_MS}ms"
+echo "[setup] Layer pause: ${LAYER_PAUSE_MS}ms"
 
 setenforce 0 || true
 
@@ -75,4 +81,6 @@ taskset fe ./bin/llama-ignite-npu \
     --ram-p "$RAM_P" \
     --cpu-d "$CPU_D" \
     --ram-d "$RAM_D" \
-    --token-pause "$TOKEN_PAUSE_MS"
+    --phase-pause "$PHASE_PAUSE_MS" \
+    --token-pause "$TOKEN_PAUSE_MS" \
+    --layer-pause "$LAYER_PAUSE_MS"
