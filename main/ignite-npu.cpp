@@ -636,10 +636,53 @@ int main(int argc, char ** argv) {
     }
 
     // dummy dvfs object
-    std::string device_name = "S25";
+    const std::string device_name =
+        params.dvfs_device_name.empty() ? "S25" : params.dvfs_device_name;
+
     DVFS dvfs(device_name);
-    dvfs.control_start_point = start_sys_time; // need to be initialized to sync `record_hard` and `inference_stats`.
+    dvfs.control_start_point = start_sys_time;
     dvfs.output_filename = params.output_dir + "/hardware_stats.csv";
+
+    const bool want_prefill_dvfs = params.cpu_p >= 0 || params.ram_p >= 0;
+    const bool want_decode_dvfs  = params.cpu_d >= 0 || params.ram_d >= 0;
+    bool runtime_dvfs_ready = false;
+    bool prefill_dvfs_applied = false;
+    bool decode_dvfs_applied = false;
+
+    if (want_prefill_dvfs || want_decode_dvfs) {
+        runtime_dvfs_ready = (dvfs.init_fd_cache() == 0);
+        if (!runtime_dvfs_ready) {
+            LOG_WRN("%s: failed to init DVFS for %s, continuing without runtime DVFS\n",
+                    __func__, device_name.c_str());
+        }
+    }
+
+    auto apply_dvfs = [&](int cpu_idx, int ram_idx) {
+        if (!runtime_dvfs_ready) {
+            return;
+        }
+
+        if (cpu_idx >= 0) {
+            auto conf = dvfs.get_cpu_freqs_conf(cpu_idx);
+            if (dvfs.set_cpu_freq(conf) != 0) {
+                LOG_WRN("%s: failed to set CPU DVFS index %d\n", __func__, cpu_idx);
+            }
+        }
+
+        if (ram_idx >= 0) {
+            if (dvfs.set_ram_freq(ram_idx) != 0) {
+                LOG_WRN("%s: failed to set RAM DVFS index %d\n", __func__, ram_idx);
+            }
+        }
+    };
+
+    auto reset_dvfs = [&]() {
+        if (!runtime_dvfs_ready) {
+            return;
+        }
+        dvfs.unset_cpu_freq();
+        dvfs.unset_ram_freq();
+    };
 
     #if IGNITE_USE_SYSTEM_DVFS
     std::thread record_thread = std::thread(record_hard, std::ref(sigterm), std::ref(dvfs));
@@ -918,6 +961,11 @@ int main(int argc, char ** argv) {
             }
 
             if (!embd.empty()) {
+                // Initial clock (Prefill phase)
+                if (!generation_started && !prefill_dvfs_applied) {
+                    apply_dvfs(params.cpu_p, params.ram_p);
+                    prefill_dvfs_applied = true;
+                }
                 int n_eval = (int) embd.size();
                 LOG_DBG("eval: %s\n", string_from(ctx, embd).c_str());
 
@@ -953,6 +1001,17 @@ int main(int argc, char ** argv) {
         embd.clear();
 
         if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
+            // Phase clock control before decode phase
+            if (!generation_started) {
+                if (!decode_dvfs_applied) {
+                    apply_dvfs(params.cpu_d, params.ram_d);
+                    decode_dvfs_applied = true;
+                }
+                if (params.phase_pause > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(params.phase_pause));
+                }
+        }
+
 // ------------------------------------------------
             // now, generation starts
             generation_started = true;
@@ -1179,7 +1238,11 @@ int main(int argc, char ** argv) {
                     ggml_backend_sched_profile_reset();
                     n_past = 0; n_consumed = 0; waiting_for_first_input = true;
                     common_sampler_reset(smpl);
-
+                    
+                    // reset dvfs 
+                    reset_dvfs();
+                    prefill_dvfs_applied = false;
+                    decode_dvfs_applied = false;
                     generation_started = false;
                     n_remain = params.n_predict;
                     ga_i = 0;
