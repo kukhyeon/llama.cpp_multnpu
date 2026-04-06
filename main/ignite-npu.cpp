@@ -637,14 +637,14 @@ int main(int argc, char ** argv) {
 
     // dummy dvfs object
     const std::string device_name =
-        params.dvfs_device_name.empty() ? "S25" : params.dvfs_device_name;
+        params.device_name.empty() ? "S25" : params.device_name;
 
     DVFS dvfs(device_name);
     dvfs.control_start_point = start_sys_time;
     dvfs.output_filename = params.output_dir + "/hardware_stats.csv";
 
-    const bool want_prefill_dvfs = params.cpu_p >= 0 || params.ram_p >= 0;
-    const bool want_decode_dvfs  = params.cpu_d >= 0 || params.ram_d >= 0;
+    const bool want_prefill_dvfs = params.cpu_clk_idx_p >= 0 || params.ram_clk_idx_p >= 0;
+    const bool want_decode_dvfs  = params.cpu_clk_idx_d >= 0 || params.ram_clk_idx_d >= 0;
     bool runtime_dvfs_ready = false;
     bool prefill_dvfs_applied = false;
     bool decode_dvfs_applied = false;
@@ -963,7 +963,7 @@ int main(int argc, char ** argv) {
             if (!embd.empty()) {
                 // Initial clock (Prefill phase)
                 if (!generation_started && !prefill_dvfs_applied) {
-                    apply_dvfs(params.cpu_p, params.ram_p);
+                    apply_dvfs(params.cpu_clk_idx_p, params.ram_clk_idx_p);
                     prefill_dvfs_applied = true;
                 }
                 int n_eval = (int) embd.size();
@@ -1005,7 +1005,7 @@ int main(int argc, char ** argv) {
             // Phase clock control before decode phase
             if (!generation_started) {
                 if (!decode_dvfs_applied) {
-                    apply_dvfs(params.cpu_d, params.ram_d);
+                    apply_dvfs(params.cpu_clk_idx_d, params.ram_clk_idx_d);
                     decode_dvfs_applied = true;
                 }
             }

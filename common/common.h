@@ -621,21 +621,26 @@ struct common_params {
     bool enable_thinking = false;
 
     // llm plane
-    std::string dvfs_device_name = "S25";
-    int cpu_p = -1;
-    int ram_p = -1;
-    int cpu_d = -1;
-    int ram_d = -1;
+    std::string device_name = "S25";
+    int cpu_clk_idx_p = -1;
+    int ram_clk_idx_p = -1;
+    int cpu_clk_idx_d = -1;
+    int ram_clk_idx_d = -1;
 
     int phase_pause = 0; // ms
     int token_pause = 0; // ms
     int layer_pause = 0; // ms
-    // int query_interval = 0; // ms
-    // bool prefill_phase = true; // prefill phase or not
-    // double prefill_speed = 0.0; // tokens/s
-    // double decode_speed = 0.0; // tokens/s
-    // bool is_ignite_active = false;
-    // bool ignite_verbose = false;
+    int query_interval = 0; // ms
+    bool prefill_phase = true; // prefill phase or not
+    double prefill_speed = 0.0; // tokens/s
+    double decode_speed = 0.0; // tokens/s
+#if defined (IGNITE_USE_SYSTEM_DVFS)
+    bool is_ignite_active = true;
+    bool ignite_verbose = false;
+#else
+    bool is_ignite_active = false;
+    bool ignite_verbose = false;
+#endif
 
     // basic measure configs
     int max_query_number = -1;       // limit of CSV questions (0=no limit) // deprecated in future

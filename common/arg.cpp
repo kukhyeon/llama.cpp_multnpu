@@ -1048,35 +1048,35 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         {"--device-name", "--dvfs-device"}, "DN",
         "DVFS target device name (e.g. S25, S24, Pixel9)",
         [](common_params & params, const std::string & value) {
-            params.dvfs_device_name = value;
+            params.device_name = value;
         }
     ).set_examples({LLAMA_EXAMPLE_COMPLETION}));
     add_opt(common_arg(
         {"--cpu-p"}, "IDX",
         "prefill CPU DVFS index",
         [](common_params & params, int value) {
-            params.cpu_p = value;
+            params.cpu_clk_idx_p = value;
         }
     ).set_examples({LLAMA_EXAMPLE_COMPLETION}));
     add_opt(common_arg(
         {"--ram-p"}, "IDX",
         "prefill RAM DVFS index",
         [](common_params & params, int value) {
-            params.ram_p = value;
+            params.ram_clk_idx_p = value;
         }
     ).set_examples({LLAMA_EXAMPLE_COMPLETION}));
     add_opt(common_arg(
         {"--cpu-d"}, "IDX",
         "decode CPU DVFS index",
         [](common_params & params, int value) {
-            params.cpu_d = value;
+            params.cpu_clk_idx_d = value;
         }
     ).set_examples({LLAMA_EXAMPLE_COMPLETION}));
     add_opt(common_arg(
         {"--ram-d"}, "IDX",
         "decode RAM DVFS index",
         [](common_params & params, int value) {
-            params.ram_d = value;
+            params.ram_clk_idx_d = value;
         }
     ).set_examples({LLAMA_EXAMPLE_COMPLETION}));
     add_opt(common_arg(
