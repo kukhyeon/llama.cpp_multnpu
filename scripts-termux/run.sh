@@ -10,6 +10,7 @@
 #   $5: phase pause in ms
 #   $6: token pause in ms
 #   $7: layer pause in ms
+#   $8: ignite verbose [on|off]
 
 DEV="${DEV:-S25}"
 CPU_P="${1:-15}"
@@ -19,6 +20,16 @@ RAM_D="${4:-9}"
 PHASE_PAUSE_MS="${5:-0}"
 TOKEN_PAUSE_MS="${6:-0}"
 LAYER_PAUSE_MS="${7:-0}"
+IGNITE_VERBOSE="${8:-off}"
+
+case "$IGNITE_VERBOSE" in
+    1|on|ON|true|TRUE|yes|YES)
+        IGNITE_VERBOSE_ARG="--ignite-verbose"
+        ;;
+    *)
+        IGNITE_VERBOSE_ARG=""
+        ;;
+esac
 
 restore_system_state() {
     status=$?
@@ -54,6 +65,7 @@ echo "[setup] DVFS indices: prefill(cpu=$CPU_P, ram=$RAM_P), decode(cpu=$CPU_D, 
 echo "[setup] Phase pause: ${PHASE_PAUSE_MS}ms"
 echo "[setup] Token pause: ${TOKEN_PAUSE_MS}ms"
 echo "[setup] Layer pause: ${LAYER_PAUSE_MS}ms"
+echo "[setup] Ignite verbose: ${IGNITE_VERBOSE}"
 
 setenforce 0 || true
 
@@ -83,4 +95,5 @@ taskset fe ./bin/llama-ignite-npu \
     --ram-d "$RAM_D" \
     --phase-pause "$PHASE_PAUSE_MS" \
     --token-pause "$TOKEN_PAUSE_MS" \
-    --layer-pause "$LAYER_PAUSE_MS"
+    --layer-pause "$LAYER_PAUSE_MS" \
+    ${IGNITE_VERBOSE_ARG}
