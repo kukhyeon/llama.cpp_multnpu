@@ -621,9 +621,15 @@ struct common_params {
     bool enable_thinking = false;
 
     // llm plane
-    // int phase_pause = 0; // ms
-    // int token_pause = 0; // ms
-    // int layer_pause = 0; // ms
+    std::string dvfs_device_name = "S25";
+    int cpu_p = -1;
+    int ram_p = -1;
+    int cpu_d = -1;
+    int ram_d = -1;
+
+    int phase_pause = 0; // ms
+    int token_pause = 0; // ms
+    int layer_pause = 0; // ms
     // int query_interval = 0; // ms
     // bool prefill_phase = true; // prefill phase or not
     // double prefill_speed = 0.0; // tokens/s
