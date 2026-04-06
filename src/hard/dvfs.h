@@ -86,10 +86,6 @@ private:
         int ddrqos_gold_max_fd = -1;
         int ddrqos_prime_min_fd = -1;
         int ddrqos_prime_max_fd = -1;
-
-        int llcc_gold_vote_fd = -1;
-        int llcc_prime_vote_fd = -1;
-        int llcc_boost_fd = -1;
     };
 
     std::vector<CpuPolicyFD> cpu_fds;

@@ -231,10 +231,6 @@ int DVFS::init_fd_cache() {
         s25_ram_fds.ddrqos_prime_min_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/min_freq");
         s25_ram_fds.ddrqos_prime_max_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/DDRQOS/soc:qcom,memlat:ddrqos:prime/max_freq");
 
-        s25_ram_fds.llcc_gold_vote_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/LLCC/240b3400.qcom,bwmon-llcc-gold/second_vote_limit");
-        s25_ram_fds.llcc_prime_vote_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/LLCC/240b7400.qcom,bwmon-llcc-prime/second_vote_limit");
-        s25_ram_fds.llcc_boost_fd = open_wr("/sys/devices/system/cpu/bus_dcvs/LLCC/boost_freq");
-
         if (s25_ram_fds.ddr_boost_fd < 0 ||
             s25_ram_fds.ddrqos_boost_fd < 0 ||
             s25_ram_fds.ddr_gold_min_fd < 0 ||
@@ -246,10 +242,7 @@ int DVFS::init_fd_cache() {
             s25_ram_fds.ddrqos_gold_min_fd < 0 ||
             s25_ram_fds.ddrqos_gold_max_fd < 0 ||
             s25_ram_fds.ddrqos_prime_min_fd < 0 ||
-            s25_ram_fds.ddrqos_prime_max_fd < 0 ||
-            s25_ram_fds.llcc_gold_vote_fd < 0 ||
-            s25_ram_fds.llcc_prime_vote_fd < 0 ||
-            s25_ram_fds.llcc_boost_fd < 0) {
+            s25_ram_fds.ddrqos_prime_max_fd < 0) {
             fprintf(stderr, "[DVFS] S25 RAM voter open failed (need root?)\n");
             close_fd_cache();
             fd_ready = false;
@@ -330,9 +323,6 @@ void DVFS::close_fd_cache_nolock() {
     close_fd(s25_ram_fds.ddrqos_gold_max_fd);
     close_fd(s25_ram_fds.ddrqos_prime_min_fd);
     close_fd(s25_ram_fds.ddrqos_prime_max_fd);
-    close_fd(s25_ram_fds.llcc_gold_vote_fd);
-    close_fd(s25_ram_fds.llcc_prime_vote_fd);
-    close_fd(s25_ram_fds.llcc_boost_fd);
 
     fd_ready = false;
 }
@@ -423,10 +413,6 @@ int DVFS::set_ram_freq(const int freq_idx) {
         if (write_fd_int(s25_ram_fds.ddrqos_gold_max_fd, 1) != 0) return 12;
         if (write_fd_int(s25_ram_fds.ddrqos_prime_min_fd, 1) != 0) return 13;
         if (write_fd_int(s25_ram_fds.ddrqos_prime_max_fd, 1) != 0) return 14;
-
-        if (write_fd_int(s25_ram_fds.llcc_gold_vote_fd, clk) != 0) return 15;
-        if (write_fd_int(s25_ram_fds.llcc_prime_vote_fd, clk) != 0) return 16;
-        if (write_fd_int(s25_ram_fds.llcc_boost_fd, 1211000) != 0) return 17;
         return 0;
     }
     // max first, min last (policy-dependent, but this form is generally safe)
@@ -462,10 +448,6 @@ int DVFS::unset_ram_freq() {
         if (write_fd_int(s25_ram_fds.ddrqos_gold_max_fd, 1) != 0) return 12;
         if (write_fd_int(s25_ram_fds.ddrqos_prime_min_fd, 0) != 0) return 13;
         if (write_fd_int(s25_ram_fds.ddrqos_prime_max_fd, 1) != 0) return 14;
-
-        if (write_fd_int(s25_ram_fds.llcc_gold_vote_fd, max_clk) != 0) return 15;
-        if (write_fd_int(s25_ram_fds.llcc_prime_vote_fd, max_clk) != 0) return 16;
-        if (write_fd_int(s25_ram_fds.llcc_boost_fd, 350000) != 0) return 17;
         return 0;
     }
     if (write_fd_int(mif_fds.max_fd, max_clk) != 0) return 3;
