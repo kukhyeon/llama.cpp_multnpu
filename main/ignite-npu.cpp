@@ -1008,7 +1008,11 @@ int main(int argc, char ** argv) {
                     decode_dvfs_applied = true;
                 }
                 if (params.phase_pause > 0) {
+                    // TODO: Delete this logs if phase-pause is validated
+                    const int64_t t0 = ggml_time_us();
+                    LOG_INF("phase_pause start: %d ms\n", params.phase_pause);
                     std::this_thread::sleep_for(std::chrono::milliseconds(params.phase_pause));
+                    LOG_INF("phase_pause end: slept %.2f ms\n", (ggml_time_us() - t0) / 1000.0);
                 }
         }
 
