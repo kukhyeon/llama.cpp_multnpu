@@ -380,7 +380,7 @@ private:
 
 private:
     enum class lp_mha_key_t { none, attn_out, kqv_out };
-    bool lp_enable = true;
+    bool lp_enable = false;
     bool lp_is_prefill = false;
     mutable bool seen_attn_out = false;
     mutable bool seen_kqv_out = false;

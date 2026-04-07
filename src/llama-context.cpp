@@ -1080,6 +1080,7 @@ void llama_context::set_ignite_params(
             const llama_igparams * cfg) {
     LLAMA_LOG_DEBUG("%s: call\n", __func__);
     igparams = *cfg;
+    lp_enable = igparams.layer_pause > 0;
 }
 
 struct llama_igparams * llama_context::get_ignite_params() {
@@ -2156,8 +2157,10 @@ ggml_status llama_context::graph_compute(
         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
     }
 
-    if (igparams.is_ignite_active) {
+    if (igparams.is_ignite_active && lp_enable && batched) {
         ggml_backend_sched_set_eval_callback(sched.get(), lp_eval_callback, this);
+    } else {
+        ggml_backend_sched_set_eval_callback(sched.get(), nullptr, nullptr);
     }
 
     // Let ggml scheduler profiling know whether this run is prefill (batched) or decode (single token).
@@ -2176,17 +2179,23 @@ ggml_status llama_context::graph_compute(
 bool llama_context::lp_eval_callback(struct ggml_tensor * t, bool ask, void * user_data) {
     auto * ctx = static_cast<llama_context *>(user_data);
 
-    if (ask) {
-        return true;
-    }
-
     if (!ctx->lp_enable || !ctx->lp_is_prefill) {
-        return true;
+        return ask ? false : true;
     }
 
     const char * n = ggml_get_name(t);
     if (!n || !n[0]) {
-        return true;
+        return ask ? false : true;
+    }
+
+    const bool is_mha =
+        (strncmp(n, "attn_out", 8) == 0 && ctx->lp_mha_key == lp_mha_key_t::attn_out) ||
+        (strncmp(n, "kqv_out", 7) == 0 && ctx->lp_mha_key == lp_mha_key_t::kqv_out);
+    const bool is_ffn =
+        (strncmp(n, "ffn_out", 7) == 0 || strncmp(n, "ffn_mlp", 7) == 0);
+
+    if (ask) {
+        return is_mha || is_ffn;
     }
 
     if (strncmp(n, "attn_out", 8) == 0 && ctx->lp_mha_key == lp_mha_key_t::attn_out) {
@@ -2208,7 +2217,7 @@ bool llama_context::lp_eval_callback(struct ggml_tensor * t, bool ask, void * us
         std::this_thread::sleep_for(std::chrono::milliseconds(ctx->igparams.layer_pause));
     }
 
-    return true;
+    return is_mha || is_ffn;
 }
 
 llm_graph_cb llama_context::graph_get_cb() const {

@@ -40,6 +40,7 @@ void llama_ignite_set_layer_pause(struct llama_context * ctx, uint16_t ms) {
     }
 
     ig->layer_pause = ms;
+    ctx->set_ignite_params(ig);
 }
 
 uint16_t llama_ignite_get_layer_pause(struct llama_context * ctx) {
